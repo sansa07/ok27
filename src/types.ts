@@ -9,17 +9,14 @@ export interface ChatMessage {
 export interface ChatAttachment {
   name: string;
   mime: string;
-  contentString: string;
+  contentString: string; // Base64 encoded data URL format
 }
 
 export interface ApiResponse {
   id: string;
   type: 'abort' | 'textResponse';
   textResponse: string;
-  sources: {
-    title: string;
-    chunk: string;
-  }[];
+  sources: Source[];
   close: boolean;
   error: string | null;
 }
@@ -27,4 +24,19 @@ export interface ApiResponse {
 export interface Source {
   title: string;
   chunk: string;
+}
+
+// API isteği için tip tanımları
+export interface ApiRequestBody {
+  message: string;
+  mode: 'query' | 'chat';
+  sessionId: string;
+  attachments?: ChatAttachment[];
+  reset: boolean;
+}
+
+// API hata yanıtları için tip tanımları
+export interface ApiErrorResponse {
+  error?: string;
+  message?: string;
 }

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
-import { Bot, Send, Image as ImageIcon, Mic, MicOff, Volume2, VolumeX, RotateCcw, X } from 'lucide-react';
+import { Bot, Send, Image as ImageIcon, Mic, MicOff, Volume2, VolumeX, RotateCcw, X, AlertCircle } from 'lucide-react';
 import { ChatMessage, ChatAttachment, Source } from './types';
 import { sendChatMessage, ChatApiError } from './api';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
@@ -12,10 +12,11 @@ function App() {
   const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const voiceModeRef = useRef(false);
-  const isProcessingVoiceRef = useRef(false); // Sesli işlemi takip etmek için
+  const isProcessingVoiceRef = useRef(false);
 
   // Speech hooks
   const {
@@ -108,6 +109,7 @@ function App() {
       };
 
       setMessages(prev => [...prev, botMessage]);
+      setApiKeyError(false); // API başarılı olduğunda hatayı temizle
 
       // Speak response and restart listening when done
       if (data.textResponse && voiceModeRef.current) {
@@ -130,9 +132,15 @@ function App() {
       }
       
     } catch (error) {
-      const errorMessage = error instanceof ChatApiError 
-        ? error.message 
-        : 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.';
+      let errorMessage = 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.';
+      
+      if (error instanceof ChatApiError) {
+        errorMessage = error.message;
+        // API key hatası kontrolü
+        if (error.message.includes('API anahtarı') || error.message.includes('Geçersiz API anahtarı')) {
+          setApiKeyError(true);
+        }
+      }
 
       console.error('❌ Voice conversation error:', error);
       
@@ -147,8 +155,8 @@ function App() {
       // İşlem tamamlandığını işaretle
       isProcessingVoiceRef.current = false;
 
-      // Continue voice mode even on error
-      if (voiceModeRef.current) {
+      // Continue voice mode even on error (unless it's an API key error)
+      if (voiceModeRef.current && !apiKeyError) {
         setTimeout(() => {
           if (voiceModeRef.current) {
             restartListening(handleVoiceConversation);
@@ -166,6 +174,12 @@ function App() {
 
     if (!file.type.startsWith('image/')) {
       alert('Lütfen sadece resim dosyası yükleyin.');
+      return;
+    }
+
+    // Dosya boyutu kontrolü (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Dosya boyutu 5MB\'dan küçük olmalıdır.');
       return;
     }
 
@@ -191,6 +205,7 @@ function App() {
     
     setMessages([]);
     setIsVoiceMode(false);
+    setApiKeyError(false);
     voiceModeRef.current = false;
     isProcessingVoiceRef.current = false;
     stopSpeaking();
@@ -199,8 +214,10 @@ function App() {
     
     try {
       await sendChatMessage('', 'chat', 'user-session-1', undefined, true);
+      console.log('✅ Chat başarıyla sıfırlandı');
     } catch (error) {
-      console.error('Chat sıfırlama hatası:', error);
+      console.error('❌ Chat sıfırlama hatası:', error);
+      // Sıfırlama hatası kullanıcıya gösterilmez, sadece loglanır
     }
   };
 
@@ -241,6 +258,7 @@ function App() {
       };
 
       setMessages(prev => [...prev, botMessage]);
+      setApiKeyError(false); // API başarılı olduğunda hatayı temizle
 
       // Auto-speak if enabled
       if (autoSpeak && data.textResponse) {
@@ -250,11 +268,17 @@ function App() {
       }
       
     } catch (error) {
-      const errorMessage = error instanceof ChatApiError 
-        ? error.message 
-        : 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.';
+      let errorMessage = 'Üzgünüm, bir hata oluştu. Lütfen tekrar deneyin.';
+      
+      if (error instanceof ChatApiError) {
+        errorMessage = error.message;
+        // API key hatası kontrolü
+        if (error.message.includes('API anahtarı') || error.message.includes('Geçersiz API anahtarı')) {
+          setApiKeyError(true);
+        }
+      }
 
-      console.error('Hata:', error instanceof ChatApiError ? error.message : error);
+      console.error('❌ Hata:', error instanceof ChatApiError ? error.message : error);
       
       const botMessage: ChatMessage = {
         id: Date.now().toString(),
@@ -345,6 +369,16 @@ function App() {
               <X className="w-6 h-6" />
             </button>
           </div>
+
+          {/* API Key Error Warning */}
+          {apiKeyError && (
+            <div className="absolute top-24 left-4 sm:left-8 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg max-w-sm">
+              <div className="flex items-center">
+                <AlertCircle className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">API anahtarı hatası!</span>
+              </div>
+            </div>
+          )}
 
           {/* Visual Feedback */}
           <div className="text-center flex flex-col items-center">
@@ -467,7 +501,7 @@ function App() {
                 {speechRecognitionSupported && speechSynthesisSupported && (
                   <button
                     onClick={handleVoiceToggle}
-                    disabled={isLoading}
+                    disabled={isLoading || apiKeyError}
                     className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition-colors font-medium ${
                       isVoiceMode
                         ? 'bg-green-500 text-white hover:bg-green-600'
@@ -508,6 +542,21 @@ function App() {
               </button>
             </div>
 
+            {/* API Key Error Warning */}
+            {apiKeyError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center">
+                  <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                  <div className="text-sm">
+                    <p className="text-red-800 font-medium">API Anahtarı Hatası</p>
+                    <p className="text-red-600 mt-1">
+                      Lütfen .env dosyasında VITE_API_KEY değişkenini kontrol edin.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Voice Status */}
             {(speechRecognitionSupported || speechSynthesisSupported) && (
               <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
@@ -537,6 +586,13 @@ function App() {
                   <p className="text-gray-500">Herhangi bir sorunuzu yanıtlamaya hazırım.</p>
                   {speechRecognitionSupported && speechSynthesisSupported && (
                     <p className="text-sm text-blue-600 mt-2">💡 "Sesli Konuşma" butonuna basarak sürekli sesli sohbet edebilirsiniz!</p>
+                  )}
+                  {apiKeyError && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-600">
+                        ⚠️ API anahtarı hatası nedeniyle şu anda mesaj gönderemezsiniz.
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -627,12 +683,18 @@ function App() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder={isListening ? "Dinleniyor... Konuşmaya başlayın" : "Mesajınızı yazın veya mikrofon butonuna basın..."}
+                onKeyPress={(e) => e.key === 'Enter' && !apiKeyError && handleSendMessage()}
+                placeholder={
+                  apiKeyError 
+                    ? "API anahtarı hatası - mesaj gönderilemez"
+                    : isListening 
+                      ? "Dinleniyor... Konuşmaya başlayın" 
+                      : "Mesajınızı yazın veya mikrofon butonuna basın..."
+                }
                 className={`flex-1 p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#003366] focus:ring-1 focus:ring-[#003366] transition-colors text-sm sm:text-base ${
                   isListening ? 'border-red-300 bg-red-50' : ''
-                }`}
-                disabled={isLoading}
+                } ${apiKeyError ? 'border-red-300 bg-red-50 cursor-not-allowed' : ''}`}
+                disabled={isLoading || apiKeyError}
               />
               <input
                 type="file"
@@ -643,7 +705,7 @@ function App() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isLoading}
+                disabled={isLoading || apiKeyError}
                 className="p-3 sm:p-4 text-[#003366] hover:bg-gray-100 rounded-xl transition-colors disabled:text-gray-400 disabled:hover:bg-transparent flex-shrink-0"
                 title="Resim ekle"
               >
@@ -654,7 +716,7 @@ function App() {
               {speechRecognitionSupported && (
                 <button
                   onClick={handleManualVoiceInput}
-                  disabled={isLoading}
+                  disabled={isLoading || apiKeyError}
                   className={`p-3 sm:p-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ${
                     isListening
                       ? 'bg-red-500 text-white hover:bg-red-600'
@@ -668,7 +730,7 @@ function App() {
               
               <button
                 onClick={handleSendMessage}
-                disabled={isLoading}
+                disabled={isLoading || apiKeyError}
                 className="bg-[#003366] hover:bg-[#004080] text-white p-3 sm:p-4 rounded-xl transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center shadow-lg flex-shrink-0"
                 title="Mesaj gönder"
               >
