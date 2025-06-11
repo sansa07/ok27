@@ -186,11 +186,14 @@ function App() {
     try {
       const reader = new FileReader();
       reader.onload = () => {
-        const contentString = reader.result as string;
+        const dataUrl = reader.result as string;
+        // Extract only the base64 portion (after the comma)
+        const base64Content = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+        
         setAttachment({
           name: file.name,
           mime: file.type,
-          contentString
+          contentString: base64Content
         });
       };
       reader.readAsDataURL(file);
@@ -631,7 +634,7 @@ function App() {
                   {msg.attachment && (
                     <div className="mt-2">
                       <img 
-                        src={msg.attachment.contentString} 
+                        src={`data:${msg.attachment.mime};base64,${msg.attachment.contentString}`}
                         alt={msg.attachment.name}
                         className="max-w-full rounded-lg"
                       />
